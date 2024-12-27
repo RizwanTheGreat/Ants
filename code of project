@@ -1,0 +1,186 @@
+#include <iostream>
+#include <vector>
+#include <map>
+#include <memory>
+#include <random>
+#include <string>
+#include <algorithm>
+
+using namespace std;
+
+class habitat {
+private:
+    static habitat* instance;
+    vector<shared_ptr<class colony>> colonies;
+    habitat() {}
+
+public:
+    static habitat* getinstance() {
+        if (!instance) {
+            instance = new habitat();
+        }
+        return instance;
+    }
+
+    void createcolony(const string& type, int posx, int posy) {
+        auto colony = make_shared<colony>(type, posx, posy);
+        colonies.push_back(colony);
+        cout << "colony of type " << type << " created at (" << posx << ", " << posy << ").\n";
+    }
+
+    void provideresources(int colonyid, const string& resource, int quantity) {
+        if (colonyid >= 0 && colonyid < colonies.size()) {
+            cout << "provided " << quantity << " units of " << resource << " to colony " << colonyid << ".\n";
+        } else {
+            cout << "invalid colony id." << endl;
+        }
+    }
+
+    void simulateticks(int numticks);
+    void colonysummary(int colonyid);
+};
+
+habitat* habitat::instance = nullptr;
+
+class ant {
+public:
+    virtual void showattributes() = 0;
+    virtual ~ant() {}
+};
+
+class basicant : public ant {
+public:
+    void showattributes() override {
+        cout << "basic ant attributes\n";
+    }
+};
+
+class mightyant : public ant {
+    shared_ptr<ant> ant;
+
+public:
+    mightyant(shared_ptr<ant> ant) : ant(ant) {}
+
+    void showattributes() override {
+        ant->showattributes();
+        cout << " + mighty\n";
+    }
+};
+
+class resourcefulant : public ant {
+    shared_ptr<ant> ant;
+
+public:
+    resourcefulant(shared_ptr<ant> ant) : ant(ant) {}
+
+    void showattributes() override {
+        ant->showattributes();
+        cout << " + resourceful\n";
+    }
+};
+
+class antfactory {
+public:
+    enum anttype { worker, defender };
+
+    static shared_ptr<ant> generateant(anttype kind) {
+        if (kind == worker) {
+            return make_shared<basicant>();
+        } else if (kind == defender) {
+            return make_shared<mightyant>(make_shared<basicant>());
+        }
+        return nullptr;
+    }
+};
+
+class colony {
+    string species;
+    int posx, posy;
+    vector<string> chambers;
+    vector<shared_ptr<ant>> antpopulation;
+
+public:
+    colony(const string& species, int posx, int posy) : species(species), posx(posx), posy(posy) {}
+
+    void constructroom(const string& room) {
+        chambers.push_back(room);
+    }
+
+    void populateant(shared_ptr<ant> ant) {
+        antpopulation.push_back(ant);
+    }
+
+    void displayrooms() {
+        for (const auto& room : chambers) {
+            cout << room << endl;
+        }
+    }
+
+    void engagebattle(shared_ptr<colony> opponent);
+    void relax();
+
+    void displaysummary() {
+        cout << "species: " << species << "\n";
+        cout << "position: (" << posx << ", " << posy << ")\n";
+        cout << "number of rooms: " << chambers.size() << "\n";
+        cout << "ant population: " << antpopulation.size() << "\n";
+    }
+};
+
+class coordinator {
+    vector<shared_ptr<colony>> allcolonies;
+
+public:
+    void registercolony(shared_ptr<colony> colony) {
+        allcolonies.push_back(colony);
+    }
+
+    void processticks(int tickcount) {
+        for (int t = 0; t < tickcount; ++t) {
+            cout << "processing tick: " << t + 1 << endl;
+            for (auto& colony : allcolonies) {
+                colony->relax();
+            }
+        }
+    }
+};
+
+int main() {
+    habitat* habitat = habitat::getinstance();
+
+    habitat->createcolony("predator", 0, 0);
+    habitat->createcolony("forager", 15, 25);
+
+    string usercommand;
+    while (true) {
+        cout << "enter a command: ";
+        getline(cin, usercommand);
+        if (usercommand == "exit") {
+            break;
+        } else if (usercommand.rfind("create", 0) == 0) {
+            int posx, posy;
+            string type;
+            sscanf(usercommand.c_str(), "create %d %d %s", &posx, &posy, &type[0]);
+            habitat->createcolony(type, posx, posy);
+        } else if (usercommand.rfind("provide", 0) == 0) {
+            int colonyid, quantity;
+            char resource[20];
+            sscanf(usercommand.c_str(), "provide %d %s %d", &colonyid, resource, &quantity);
+            habitat->provideresources(colonyid, resource, quantity);
+        } else if (usercommand.rfind("tick", 0) == 0) {
+            int ticks = 1;
+            if (usercommand.size() > 5) {
+                sscanf(usercommand.c_str(), "tick %d", &ticks);
+            }
+            cout << "simulated " << ticks << " ticks.\n";
+        } else if (usercommand.rfind("summary", 0) == 0) {
+            int colonyid;
+            sscanf(usercommand.c_str(), "summary %d", &colonyid);
+            cout << "summary of colony " << colonyid << ".\n";
+        } else {
+            cout << "unknown command.\n";
+        }
+    }
+
+    return 0;
+}
