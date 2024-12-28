@@ -1,186 +1,235 @@
 #include <iostream>
 #include <vector>
-#include <map>
-#include <memory>
-#include <random>
 #include <string>
-#include <algorithm>
+#include <memory>
+#include <map>
+#include <cstdlib>
+#include <ctime>
+#include <sstream>
 
 using namespace std;
 
-class habitat {
+class Ant;
+class AntFarm;
+class Meadow;
+class AntRoom;
+
+class Meadow {
 private:
-    static habitat* instance;
-    vector<shared_ptr<class colony>> colonies;
-    habitat() {}
+    static Meadow* instance;
+    vector<shared_ptr<AntFarm>> antFarms;
+    int speciesCount;
+
+    Meadow() {
+        speciesCount = (rand() % 6) + 10;
+    }
 
 public:
-    static habitat* getinstance() {
+    static Meadow* getInstance() {
         if (!instance) {
-            instance = new habitat();
+            instance = new Meadow();
         }
         return instance;
     }
 
-    void createcolony(const string& type, int posx, int posy) {
-        auto colony = make_shared<colony>(type, posx, posy);
-        colonies.push_back(colony);
-        cout << "colony of type " << type << " created at (" << posx << ", " << posy << ").\n";
-    }
-
-    void provideresources(int colonyid, const string& resource, int quantity) {
-        if (colonyid >= 0 && colonyid < colonies.size()) {
-            cout << "provided " << quantity << " units of " << resource << " to colony " << colonyid << ".\n";
-        } else {
-            cout << "invalid colony id." << endl;
-        }
-    }
-
-    void simulateticks(int numticks);
-    void colonysummary(int colonyid);
+    void spawnAntFarm(int x, int y, const string& species);
+    void giveResources(int farmId, const string& resource, int amount);
+    void tick(int ticks = 1);
+    void summary(int farmId);
 };
 
-habitat* habitat::instance = nullptr;
+Meadow* Meadow::instance = nullptr;
 
-class ant {
+class Ant {
+protected:
+    string species;
+    int health;
+    int kills;
+
 public:
-    virtual void showattributes() = 0;
-    virtual ~ant() {}
+    Ant(string species) : species(species), health(100), kills(0) {}
+    virtual void performAction() = 0;
+    virtual string getSpecies() { return species; }
+    virtual int getHealth() { return health; }
+    virtual void addKill() { kills++; }
+    virtual int getKills() { return kills; }
 };
 
-class basicant : public ant {
+class WorkerAnt : public Ant {
 public:
-    void showattributes() override {
-        cout << "basic ant attributes\n";
+    WorkerAnt() : Ant("Worker") {}
+    void performAction() override {
+        cout << "Worker ant is foraging for food." << endl;
     }
 };
 
-class mightyant : public ant {
-    shared_ptr<ant> ant;
-
+class WarriorAnt : public Ant {
 public:
-    mightyant(shared_ptr<ant> ant) : ant(ant) {}
-
-    void showattributes() override {
-        ant->showattributes();
-        cout << " + mighty\n";
+    WarriorAnt() : Ant("Warrior") {}
+    void performAction() override {
+        cout << "Warrior ant is hunting." << endl;
     }
 };
 
-class resourcefulant : public ant {
-    shared_ptr<ant> ant;
-
+class QueenAnt : public Ant {
 public:
-    resourcefulant(shared_ptr<ant> ant) : ant(ant) {}
-
-    void showattributes() override {
-        ant->showattributes();
-        cout << " + resourceful\n";
+    QueenAnt() : Ant("Queen") {}
+    void performAction() override {
+        cout << "Queen ant is spawning eggs." << endl;
     }
 };
 
-class antfactory {
+class AntRoom {
 public:
-    enum anttype { worker, defender };
+    virtual shared_ptr<Ant> createAnt(const string& type) = 0;
+};
 
-    static shared_ptr<ant> generateant(anttype kind) {
-        if (kind == worker) {
-            return make_shared<basicant>();
-        } else if (kind == defender) {
-            return make_shared<mightyant>(make_shared<basicant>());
-        }
+class WorkerRoom : public AntRoom {
+public:
+    shared_ptr<Ant> createAnt(const string& type) override {
+        if (type == "worker") return make_shared<WorkerAnt>();
+        if (type == "warrior") return make_shared<WarriorAnt>();
+        if (type == "queen") return make_shared<QueenAnt>();
         return nullptr;
     }
 };
 
-class colony {
-    string species;
-    int posx, posy;
-    vector<string> chambers;
-    vector<shared_ptr<ant>> antpopulation;
+class AntFarm {
+private:
+    vector<shared_ptr<Ant>> ants;
+    shared_ptr<AntRoom> room;
+    int food;
+    int id;
+    static int nextId;
 
 public:
-    colony(const string& species, int posx, int posy) : species(species), posx(posx), posy(posy) {}
-
-    void constructroom(const string& room) {
-        chambers.push_back(room);
+    AntFarm() : food(0), id(nextId++) {
+        room = make_shared<WorkerRoom>();
     }
 
-    void populateant(shared_ptr<ant> ant) {
-        antpopulation.push_back(ant);
-    }
+    int getId() const { return id; }
 
-    void displayrooms() {
-        for (const auto& room : chambers) {
-            cout << room << endl;
+    void spawnAnt(const string& type) {
+        auto ant = room->createAnt(type);
+        if (ant) {
+            ants.push_back(ant);
+            cout << type << " ant spawned in farm " << id << "." << endl;
+        } else {
+            cout << "Invalid ant type: " << type << endl;
         }
     }
 
-    void engagebattle(shared_ptr<colony> opponent);
-    void relax();
+    void addFood(int amount) {
+        food += amount;
+        cout << "Food added to farm " << id << ". Total food: " << food << endl;
+    }
 
-    void displaysummary() {
-        cout << "species: " << species << "\n";
-        cout << "position: (" << posx << ", " << posy << ")\n";
-        cout << "number of rooms: " << chambers.size() << "\n";
-        cout << "ant population: " << antpopulation.size() << "\n";
+    void tick() {
+        for (auto& ant : ants) {
+            ant->performAction();
+        }
+    }
+
+    void summary() const {
+        cout << "Ant Farm Summary (Farm " << id << "):" << endl;
+        for (auto& ant : ants) {
+            cout << ant->getSpecies() << " - Kills: " << ant->getKills() << endl;
+        }
     }
 };
 
-class coordinator {
-    vector<shared_ptr<colony>> allcolonies;
+int AntFarm::nextId = 1;
 
-public:
-    void registercolony(shared_ptr<colony> colony) {
-        allcolonies.push_back(colony);
-    }
+void Meadow::spawnAntFarm(int x, int y, const string& species) {
+    auto farm = make_shared<AntFarm>();
+    antFarms.push_back(farm);
+    cout << "Ant farm spawned at (" << x << ", " << y << ") with species: " << species << endl;
+}
 
-    void processticks(int tickcount) {
-        for (int t = 0; t < tickcount; ++t) {
-            cout << "processing tick: " << t + 1 << endl;
-            for (auto& colony : allcolonies) {
-                colony->relax();
+void Meadow::giveResources(int farmId, const string& resource, int amount) {
+    for (auto& farm : antFarms) {
+        if (farm->getId() == farmId) {
+            if (resource == "food") {
+                farm->addFood(amount);
+                return;
             }
+            cout << "Resource type not recognized." << endl;
+            return;
         }
     }
-};
+    cout << "Farm with ID " << farmId << " not found." << endl;
+}
+
+void Meadow::tick(int ticks) {
+    for (int i = 0; i < ticks; ++i) {
+        for (auto& farm : antFarms) {
+            farm->tick();
+        }
+    }
+}
+
+void Meadow::summary(int farmId) {
+    for (auto& farm : antFarms) {
+        if (farm->getId() == farmId) {
+            farm->summary();
+            return;
+        }
+    }
+    cout << "Farm with ID " << farmId << " not found." << endl;
+}
+
+void commandLineInterface() {
+    Meadow* meadow = Meadow::getInstance();
+    string command;
+
+    while (true) {
+        cout << "> ";
+        getline(cin, command);
+        if (command == "exit") break;
+
+        istringstream iss(command);
+        string action;
+        iss >> action;
+
+        if (action == "spawn") {
+            int x, y;
+            string species;
+            if (iss >> x >> y >> species) {
+                meadow->spawnAntFarm(x, y, species);
+            } else {
+                cout << "Usage: spawn <x> <y> <species>" << endl;
+            }
+        } else if (action == "give") {
+            int farmId, amount;
+            string resource;
+            if (iss >> farmId >> resource >> amount) {
+                meadow->giveResources(farmId, resource, amount);
+            } else {
+                cout << "Usage: give <farmId> <resource> <amount>" << endl;
+            }
+        } else if (action == "tick") {
+            int ticks = 1;
+            if (iss >> ticks) {
+                meadow->tick(ticks);
+            } else {
+                meadow->tick();
+            }
+            cout << "Performed " << ticks << " tick(s)." << endl;
+        } else if (action == "summary") {
+            int farmId;
+            if (iss >> farmId) {
+                meadow->summary(farmId);
+            } else {
+                cout << "Usage: summary <farmId>" << endl;
+            }
+        } else {
+            cout << "Unknown command. Try again." << endl;
+        }
+    }
+}
 
 int main() {
-    habitat* habitat = habitat::getinstance();
-
-    habitat->createcolony("predator", 0, 0);
-    habitat->createcolony("forager", 15, 25);
-
-    string usercommand;
-    while (true) {
-        cout << "enter a command: ";
-        getline(cin, usercommand);
-        if (usercommand == "exit") {
-            break;
-        } else if (usercommand.rfind("create", 0) == 0) {
-            int posx, posy;
-            string type;
-            sscanf(usercommand.c_str(), "create %d %d %s", &posx, &posy, &type[0]);
-            habitat->createcolony(type, posx, posy);
-        } else if (usercommand.rfind("provide", 0) == 0) {
-            int colonyid, quantity;
-            char resource[20];
-            sscanf(usercommand.c_str(), "provide %d %s %d", &colonyid, resource, &quantity);
-            habitat->provideresources(colonyid, resource, quantity);
-        } else if (usercommand.rfind("tick", 0) == 0) {
-            int ticks = 1;
-            if (usercommand.size() > 5) {
-                sscanf(usercommand.c_str(), "tick %d", &ticks);
-            }
-            cout << "simulated " << ticks << " ticks.\n";
-        } else if (usercommand.rfind("summary", 0) == 0) {
-            int colonyid;
-            sscanf(usercommand.c_str(), "summary %d", &colonyid);
-            cout << "summary of colony " << colonyid << ".\n";
-        } else {
-            cout << "unknown command.\n";
-        }
-    }
-
+    srand(static_cast<unsigned int>(time(nullptr)));
+    commandLineInterface();
     return 0;
 }
